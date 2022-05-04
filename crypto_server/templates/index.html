@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Crypto server POC</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.20.0/full/pyodide.js"></script>
+  </head>
+  <body>
+    <script type="text/javascript">
+      const code = `
+        import base64
+        from js import fetch
+        from cryptography.hazmat.primitives import serialization, hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+
+        response = await fetch("/key")
+        public_pem = await response.text()
+        public_key = serialization.load_pem_public_key(public_pem.encode())
+        
+        ciphertext = public_key.encrypt(
+            msg.encode(),
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None,
+            ),
+        )
+
+        body = base64.urlsafe_b64encode(ciphertext).decode()
+
+        await fetch("/msg", method="POST", body=body)
+        `;
+
+      async function sendEncryptedMessage(msg) {
+        const pyodide = await loadPyodide();
+        await pyodide.loadPackage("cryptography");
+        const pyVars = pyodide.toPy({ msg });
+        const result = await pyodide.runPythonAsync(code, { globals: pyVars });
+        //console.log(result);
+      }
+
+      function submitForm() {
+        document.getElementById("submit").disabled = true;
+
+        sendEncryptedMessage(document.getElementById("msg").value)
+          .then(() => {
+            console.log("Message sent!");
+            document.getElementById("success").style.display = "block";
+          })
+          .catch((err) => {
+            console.error(err);
+            document.getElementById("error").style.display = "block";
+          });
+
+        return false;
+      }
+    </script>
+    <form onsubmit="return submitForm()">
+      <p><textarea id="msg" style="width: 300px; height: 100px"></textarea></p>
+      <p><input type="submit" id="submit" value="Send Message" /></p>
+      <p id="success" style="display: none">Message was sent!</p>
+      <p id="error" style="display: none; color: red">An error occured (check console)</p>
+    </form>
+  </body>
+</html>
